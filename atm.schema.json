@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pi.dev/schemas/active-token-management.schema.json",
+  "title": "Pi Active Token Management configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "enabled": { "type": "boolean" },
+    "debug": { "type": "boolean" },
+    "pruneNotification": { "enum": ["off", "minimal", "detailed"] },
+    "pruneNotificationType": { "enum": ["toast", "chat"] },
+    "manualMode": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "automaticStrategies": { "type": "boolean" }
+      }
+    },
+    "turnProtection": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "turns": { "type": "number", "minimum": 0 }
+      }
+    },
+    "protectedFilePatterns": { "type": "array", "items": { "type": "string" } },
+    "compress": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": { "enum": ["range", "message"] },
+        "permission": { "enum": ["allow", "ask", "deny"] },
+        "showCompression": { "type": "boolean" },
+        "minContextLimit": {
+          "oneOf": [{ "type": "number", "minimum": 0 }, { "type": "string", "pattern": "^[0-9]+(\\.[0-9]+)?%$" }]
+        },
+        "maxContextLimit": {
+          "oneOf": [{ "type": "number", "minimum": 0 }, { "type": "string", "pattern": "^[0-9]+(\\.[0-9]+)?%$" }]
+        },
+        "modelMinLimits": {
+          "type": "object",
+          "additionalProperties": {
+            "oneOf": [{ "type": "number", "minimum": 0 }, { "type": "string", "pattern": "^[0-9]+(\\.[0-9]+)?%$" }]
+          }
+        },
+        "modelMaxLimits": {
+          "type": "object",
+          "additionalProperties": {
+            "oneOf": [{ "type": "number", "minimum": 0 }, { "type": "string", "pattern": "^[0-9]+(\\.[0-9]+)?%$" }]
+          }
+        },
+        "nudgeFrequency": { "type": "number", "minimum": 1 },
+        "iterationNudgeThreshold": { "type": "number", "minimum": 1 },
+        "nudgeForce": { "enum": ["soft", "strong"] },
+        "protectedTools": { "type": "array", "items": { "type": "string" } },
+        "protectTags": { "type": "boolean" },
+        "protectUserMessages": { "type": "boolean" },
+        "keepRecentMessages": { "type": "number", "minimum": 0 }
+      }
+    },
+    "strategies": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "deduplication": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "protectedTools": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "purgeErrors": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "turns": { "type": "number", "minimum": 0 },
+            "protectedTools": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      }
+    },
+    "experimental": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "customPrompts": { "type": "boolean" }
+      }
+    }
+  }
+}

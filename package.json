@@ -1,0 +1,47 @@
+{
+  "name": "pi-atm",
+  "version": "0.1.0",
+  "description": "Active Token Management extension for Pi.",
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "context-management",
+    "token-management",
+    "compression"
+  ],
+  "license": "MIT",
+  "files": [
+    "extensions",
+    "src",
+    "README.md",
+    "atm.schema.json",
+    "LICENSE"
+  ],
+  "pi": {
+    "extensions": [
+      "./extensions"
+    ]
+  },
+  "scripts": {
+    "format": "biome check --write .",
+    "lint": "biome check .",
+    "check": "biome ci . && npm run typecheck && npm run fallow",
+    "fallow": "fallow --ci --fail-on-issues",
+    "typecheck": "tsc --noEmit",
+    "prepare": "husky"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.16",
+    "@earendil-works/pi-coding-agent": "^0.78.0",
+    "@types/node": "^24.0.0",
+    "fallow": "^2.88.0",
+    "husky": "^9.1.7",
+    "typebox": "^1.0.68",
+    "typescript": "^5.9.0"
+  }
+}
