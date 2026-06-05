@@ -100,32 +100,50 @@ function stripAtmTags(s: string) {
     .trimStart()
 }
 
+function isAliasCatalog(m: AtmMessage) {
+  return (
+    m.role === "custom" && m.customType === EXT && typeof m.content === "string" && /<atm-aliases\b/i.test(m.content)
+  )
+}
+
+function stripAliasTagsFromMessage(m: AtmMessage): AtmMessage {
+  if (typeof m.content === "string") return { ...m, content: stripAtmTags(m.content) }
+  if (Array.isArray(m.content)) {
+    const content = m.content
+      .map((part) =>
+        part.type === "text" && typeof part.text === "string" ? { ...part, text: stripAtmTags(part.text) } : part,
+      )
+      .filter((part) => !(part.type === "text" && !part.text))
+    return { ...m, content }
+  }
+  return m
+}
+
 export function stripAliasesFromMessages(messages: AtmMessage[]): AtmMessage[] {
-  return messages.map((m) => {
-    if (typeof m.content === "string") return { ...m, content: stripAtmTags(m.content) }
-    if (Array.isArray(m.content)) {
-      const content = m.content
-        .map((part) =>
-          part.type === "text" && typeof part.text === "string" ? { ...part, text: stripAtmTags(part.text) } : part,
-        )
-        .filter((part) => !(part.type === "text" && !part.text))
-      return { ...m, content }
-    }
-    return m
-  })
+  return messages.filter((m) => !isAliasCatalog(m)).map(stripAliasTagsFromMessage)
+}
+
+function aliasCatalog(messages: AtmMessage[]): AtmMessage {
+  const rows = messages
+    .map((m, i) => {
+      const role = escapeAttr(String(m.role ?? "unknown"))
+      const preview = escapeAttr(stripAtmTags(textOf(m)).replace(/\s+/g, " ").trim().slice(0, 160))
+      return `  <message id="${aliasForIndex(i)}" role="${role}" preview="${preview}" />`
+    })
+    .join("\n")
+  return {
+    role: "custom",
+    customType: EXT,
+    display: false,
+    details: { aliasCatalog: true },
+    content: `<atm-aliases>\n${rows}\n</atm-aliases>`,
+  }
 }
 
 export function injectMessageAliases(messages: AtmMessage[]): AtmMessage[] {
-  return messages.map((m, i) => {
-    const alias = aliasForIndex(i)
-    if (m.role === "custom" && m.customType === EXT)
-      return { ...m, content: `<atm-message id="${alias}" />\n${m.content ?? ""}` }
-    if (typeof m.content === "string")
-      return { ...m, content: `<atm-message id="${alias}" />\n${stripAtmTags(m.content)}` }
-    if (Array.isArray(m.content))
-      return { ...m, content: [{ type: "text", text: `<atm-message id="${alias}" />` }, ...m.content] }
-    return m
-  })
+  if (!messages.length) return messages
+  const clean = stripAliasesFromMessages(messages)
+  return [...clean, aliasCatalog(clean)]
 }
 
 export function fingerprintMessage(m: AtmMessage) {
@@ -135,7 +153,7 @@ export function fingerprintMessage(m: AtmMessage) {
 }
 
 function normalizeForHash(m: AtmMessage) {
-  const x = stripAliasesFromMessages([clone(m)])[0]
+  const x = stripAliasesFromMessages([clone(m)])[0] ?? clone(m)
   delete x.timestamp
   delete x.usage
   return x
