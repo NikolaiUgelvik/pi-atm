@@ -16,51 +16,93 @@ export function appendConsumedSummaries(
     .map((id) => state.compressions.find((c) => c.id === id))
     .filter((c): c is Compression => !!c && !summary.includes(c.summary))
   if (!missing.length) return summary
-  return `${summary}\n\n## Previously Compressed Context Preserved\n${missing.map((c) => `### b${c.id}${c.topic ? ` — ${c.topic}` : ""}\n${c.summary}`).join("\n\n")}`
+  return `${summary}\n\n## Previously Compressed Context Preserved\n${missing.map(formatConsumedSummary).join("\n\n")}`
+}
+
+function formatConsumedSummary(c: Compression) {
+  return `### b${c.id}${c.topic ? ` — ${c.topic}` : ""}\n${c.summary}`
 }
 
 export function appendProtectedContent(summary: string, selected: AtmMessage[], config: Config) {
-  const sections: string[] = []
-  if (config.compress.protectUserMessages) {
-    const users = selected
-      .filter((m) => m.role === "user")
-      .map(textOf)
-      .filter(Boolean)
-    if (users.length)
-      sections.push(
-        `## Preserved User Messages\n${users.map((u, i) => `### User message ${i + 1}\n${u}`).join("\n\n")}`,
-      )
-  }
-  if (config.compress.protectTags) {
-    const protectedText = selected.flatMap((m) => extractProtectTags(textOf(m)))
-    if (protectedText.length)
-      sections.push(
-        `## Preserved <protect> Content\n${protectedText.map((t, i) => `### Protected block ${i + 1}\n${t}`).join("\n\n")}`,
-      )
-  }
+  const sections = [
+    userMessageSection(selected, config),
+    protectTagSection(selected, config),
+    protectedToolSection(selected, config),
+  ]
+    .filter(Boolean)
+    .join("\n\n")
+  return sections ? `${summary}\n\n${sections}` : summary
+}
+
+function userMessageSection(selected: AtmMessage[], config: Config) {
+  if (!config.compress.protectUserMessages) return ""
+  const users = selected
+    .filter((m) => m.role === "user")
+    .map(textOf)
+    .filter(Boolean)
+  return users.length ? `## Preserved User Messages\n${users.map(formatUserMessage).join("\n\n")}` : ""
+}
+
+function formatUserMessage(text: string, index: number) {
+  return `### User message ${index + 1}\n${text}`
+}
+
+function protectTagSection(selected: AtmMessage[], config: Config) {
+  if (!config.compress.protectTags) return ""
+  const protectedText = selected.flatMap((m) => extractProtectTags(textOf(m)))
+  return protectedText.length
+    ? `## Preserved <protect> Content\n${protectedText.map(formatProtectedBlock).join("\n\n")}`
+    : ""
+}
+
+function formatProtectedBlock(text: string, index: number) {
+  return `### Protected block ${index + 1}\n${text}`
+}
+
+function protectedToolSection(selected: AtmMessage[], config: Config) {
   const protectedTools = protectedToolOutputs(selected, config)
-  if (protectedTools.length)
-    sections.push(
-      `## Preserved Protected Tool Outputs\n${protectedTools.map((t, i) => `### ${t.name || "tool"} ${i + 1}${t.callId ? ` (${t.callId})` : ""}\n${t.output}`).join("\n\n")}`,
-    )
-  return sections.length ? `${summary}\n\n${sections.join("\n\n")}` : summary
+  return protectedTools.length
+    ? `## Preserved Protected Tool Outputs\n${protectedTools.map(formatProtectedTool).join("\n\n")}`
+    : ""
+}
+
+function formatProtectedTool(tool: { name?: string; callId?: string; output: string }, index: number) {
+  return `### ${tool.name || "tool"} ${index + 1}${tool.callId ? ` (${tool.callId})` : ""}\n${tool.output}`
 }
 
 function protectedToolOutputs(selected: AtmMessage[], config: Config) {
-  const out: Array<{ name?: string; callId?: string; output: string }> = []
+  const assistantCalls = collectAssistantToolCalls(selected)
+  return selected.flatMap((message) => protectedToolOutputFor(message, assistantCalls, config))
+}
+
+function collectAssistantToolCalls(selected: AtmMessage[]) {
   const assistantCalls = new Map<string, ToolCallPart>()
-  for (const m of selected) {
-    if (m.role !== "assistant" || !Array.isArray(m.content)) continue
-    for (const part of m.content) if (isToolCallWithId(part)) assistantCalls.set(part.id, part)
+  for (const message of selected.filter(isAssistantWithContent)) {
+    for (const part of message.content) if (isToolCallWithId(part)) assistantCalls.set(part.id, part)
   }
-  for (const m of selected) {
-    if (m.role !== "toolResult") continue
-    const tc = m.toolCallId ? (assistantCalls.get(m.toolCallId) ?? syntheticToolCall(m)) : syntheticToolCall(m)
-    if (!isProtectedToolCall(tc, config)) continue
-    const output = textOf(m).trim()
-    if (output) out.push({ name: m.toolName ?? tc.name, callId: m.toolCallId, output })
-  }
-  return out
+  return assistantCalls
+}
+
+function isAssistantWithContent(message: AtmMessage): message is AtmMessage & { content: MessagePart[] } {
+  return message.role === "assistant" && Array.isArray(message.content)
+}
+
+function protectedToolOutputFor(
+  message: AtmMessage,
+  assistantCalls: Map<string, ToolCallPart>,
+  config: Config,
+): Array<{ name?: string; callId?: string; output: string }> {
+  if (message.role !== "toolResult") return []
+  const toolCall = pairedToolCall(message, assistantCalls)
+  if (!isProtectedToolCall(toolCall, config)) return []
+  const output = textOf(message).trim()
+  return output ? [{ name: message.toolName ?? toolCall.name, callId: message.toolCallId, output }] : []
+}
+
+function pairedToolCall(message: AtmMessage, assistantCalls: Map<string, ToolCallPart>) {
+  return message.toolCallId
+    ? (assistantCalls.get(message.toolCallId) ?? syntheticToolCall(message))
+    : syntheticToolCall(message)
 }
 
 function isToolCallWithId(part: MessagePart): part is ToolCallPart & { id: string } {

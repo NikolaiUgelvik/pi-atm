@@ -10,35 +10,58 @@ export function getConfigWarnings() {
 }
 
 export function loadState(entries: unknown[]): State {
-  const latestEntry = [...entries].reverse().find(isStateEntryRecord)
-  const latest = latestEntry?.data
-  const source = isRecord(latest) && latest.version === 1 ? latest : emptyState()
   const fallback = emptyState()
-  const stats = isRecord(source.stats) ? source.stats : fallback.stats
-  const defaultNudges = fallback.nudges ?? { context: [], turn: [], iteration: [] }
-  const nudges = isRecord(source.nudges) ? source.nudges : defaultNudges
+  const source = stateSource(entries)
   return {
     ...fallback,
     ...source,
     version: 1,
-    nextId: Math.max(1, Number(source.nextId) || fallback.nextId),
-    compressions: Array.isArray(source.compressions) ? (source.compressions as State["compressions"]) : [],
-    prunedTools: Array.isArray(source.prunedTools) ? (source.prunedTools as State["prunedTools"]) : [],
-    stats: {
-      ...fallback.stats,
-      ...stats,
-      contextRuns: Number(stats.contextRuns) || 0,
-      dedupePrunes: Number(stats.dedupePrunes) || 0,
-      errorPrunes: Number(stats.errorPrunes) || 0,
-      estimatedTokensSaved: Number(stats.estimatedTokensSaved) || 0,
-    },
-    nudges: {
-      context: Array.isArray(nudges.context) ? nudges.context.map(String) : [],
-      turn: Array.isArray(nudges.turn) ? nudges.turn.map(String) : [],
-      iteration: Array.isArray(nudges.iteration) ? nudges.iteration.map(String) : [],
-    },
+    nextId: sanitizeNextId(source, fallback),
+    compressions: sanitizeArray(source.compressions) as State["compressions"],
+    prunedTools: sanitizeArray(source.prunedTools) as State["prunedTools"],
+    stats: sanitizeStats(source, fallback),
+    nudges: sanitizeNudges(source, fallback),
     nudgeAudit: sanitizeNudgeAudit(source.nudgeAudit),
   }
+}
+
+function stateSource(entries: unknown[]): ConfigRecord {
+  const latest = [...entries].reverse().find(isStateEntryRecord)?.data
+  return isRecord(latest) && latest.version === 1 ? latest : emptyState()
+}
+
+function sanitizeNextId(source: ConfigRecord, fallback: State) {
+  return Math.max(1, Number(source.nextId) || fallback.nextId)
+}
+
+function sanitizeArray(value: unknown) {
+  return Array.isArray(value) ? value : []
+}
+
+function sanitizeStats(source: ConfigRecord, fallback: State) {
+  const stats = isRecord(source.stats) ? source.stats : fallback.stats
+  return {
+    ...fallback.stats,
+    ...stats,
+    contextRuns: positiveNumber(stats.contextRuns),
+    dedupePrunes: positiveNumber(stats.dedupePrunes),
+    errorPrunes: positiveNumber(stats.errorPrunes),
+    estimatedTokensSaved: positiveNumber(stats.estimatedTokensSaved),
+  }
+}
+
+function sanitizeNudges(source: ConfigRecord, fallback: State) {
+  const defaultNudges = fallback.nudges ?? { context: [], turn: [], iteration: [] }
+  const nudges = isRecord(source.nudges) ? source.nudges : defaultNudges
+  return {
+    context: stringArray(nudges.context),
+    turn: stringArray(nudges.turn),
+    iteration: stringArray(nudges.iteration),
+  }
+}
+
+function stringArray(value: unknown) {
+  return Array.isArray(value) ? value.map(String) : []
 }
 
 function sanitizeNudgeAudit(raw: unknown): NudgeAudit[] {

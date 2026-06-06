@@ -26,15 +26,18 @@ function safeName(s: string) {
     .slice(0, 24)
 }
 export function sessionKeyFromContext(ctx: Partial<RuntimeContext>, cwd = process.cwd()) {
-  return String(
-    ctx.session?.id ??
-      ctx.sessionId ??
-      ctx.sessionManager?.sessionId ??
-      ctx.sessionManager?.session?.id ??
-      ctx.sessionManager?.id ??
-      cwd ??
-      "default",
-  )
+  return String(sessionKeyCandidates(ctx, cwd).find(Boolean) ?? "default")
+}
+
+function sessionKeyCandidates(ctx: Partial<RuntimeContext>, cwd: string) {
+  return [
+    ctx.session?.id,
+    ctx.sessionId,
+    ctx.sessionManager?.sessionId,
+    ctx.sessionManager?.session?.id,
+    ctx.sessionManager?.id,
+    cwd,
+  ]
 }
 function statePath(sessionKey: string) {
   return join(baseDir(), `${safeName(sessionKey)}.json`)

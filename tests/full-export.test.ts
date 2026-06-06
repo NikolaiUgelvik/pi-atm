@@ -5,6 +5,7 @@ import { join } from "node:path"
 import test from "node:test"
 import { filterEvents, parseFullExportFilter } from "../src/full-export/filters.js"
 import { renderFullExportHtml } from "../src/full-export/html.js"
+import { renderEventEntry, renderFallback, renderSidebarItem } from "../src/full-export/html-renderers.js"
 import {
   appendFullExportEvent,
   buildFallbackExportData,
@@ -131,10 +132,10 @@ test("full export fallback captures entries, context messages, and ATM state", (
   assert.deepEqual(fallback.state, { version: 1, compressions: [], stats: { contextRuns: 1 } })
 })
 
-test("full export HTML escapes content and includes controls", () => {
+test("full export HTML uses Pi-style shell and escapes content", () => {
   const html = renderFullExportHtml({
     events: [
-      event("input", "e1"),
+      { ...event("input", "e1"), payload: { type: "input", text: "Hello & goodbye", source: "interactive" } },
       {
         ...event("provider_request", "e2"),
         provider: "test-provider",
@@ -148,13 +149,98 @@ test("full export HTML escapes content and includes controls", () => {
     cwd: "/tmp/project",
   })
 
-  assert.match(html, /<html/)
-  assert.match(html, /data-filter="provider_request"/)
-  assert.match(html, /id="search"/)
+  assert.match(html, /<div id="app">/)
+  assert.match(html, /<aside id="sidebar">/)
+  assert.match(html, /<div id="sidebar-resizer"><\/div>/)
+  assert.match(html, /<main id="content">/)
+  assert.match(html, /<section id="messages">/)
+  assert.match(html, /class="sidebar-search"/)
+  assert.match(html, /class="filter-btn active" data-filter="all"/)
+  assert.match(html, /class="tree-container"/)
+  assert.match(html, /class="tree-status"/)
+  assert.match(html, /class="user-message export-entry"/)
+  assert.match(html, /class="provider-audit export-entry"/)
   assert.match(html, /Exact provider payload history unavailable/)
   assert.match(html, /test-provider/)
+  assert.match(html, /Hello &amp; goodbye/)
   assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/)
   assert.equal(html.includes("<script>alert(1)</script>"), false)
+})
+
+test("full export HTML renders all event categories with raw JSON details", () => {
+  const events: FullExportEvent[] = [
+    { ...event("input", "input-1"), payload: { type: "input", text: "user asks" } },
+    {
+      ...event("message_end", "assistant-1"),
+      payload: {
+        type: "message_end",
+        message: { role: "assistant", content: [{ type: "text", text: "assistant replies" }] },
+      },
+    },
+    {
+      ...event("tool_call", "tool-call-1"),
+      toolName: "read",
+      toolCallId: "call-1",
+      payload: { id: "call-1", name: "read", arguments: { path: "src/full-export/html.ts" } },
+    },
+    {
+      ...event("tool_result", "tool-result-1"),
+      toolName: "read",
+      toolCallId: "call-1",
+      payload: { toolCallId: "call-1", content: [{ type: "text", text: "file contents" }], isError: false },
+    },
+    {
+      ...event("context", "context-1"),
+      payload: { originalMessages: [{ role: "user" }], transformedMessages: [{ role: "user" }, { role: "assistant" }] },
+    },
+    {
+      ...event("provider_response", "provider-1"),
+      provider: "openai",
+      model: "gpt-test",
+      payload: { usage: { input: 12, output: 3 } },
+    },
+    { ...event("atm_state", "atm-1"), payload: { state: { stats: { contextRuns: 2 } } } },
+  ]
+
+  const html = renderFullExportHtml({
+    events,
+    warnings: [],
+    generatedAt: "2026-06-06T00:00:00.000Z",
+    sessionKey: "session-1",
+    cwd: "/tmp/project",
+  })
+
+  assert.equal((html.match(/class="raw-json"/g) ?? []).length, events.length)
+  assert.equal((html.match(/class="tree-node/g) ?? []).length, events.length)
+  assert.match(html, /class="assistant-message export-entry"/)
+  assert.match(html, /class="tool-execution success export-entry"/)
+  assert.match(html, /class="context-audit export-entry"/)
+  assert.match(html, /class="provider-audit export-entry"/)
+  assert.match(html, /class="atm-audit export-entry"/)
+  assert.match(html, /assistant replies/)
+  assert.match(html, /src\/full-export\/html\.ts/)
+  assert.match(html, /original 1 · transformed 2/)
+  assert.match(html, /gpt-test/)
+})
+
+test("full export render helpers expose sidebar, entry, and fallback markup", () => {
+  const entry = renderEventEntry({
+    ...event("tool_result", "tool-result-helper"),
+    toolName: "read",
+    toolCallId: "call-helper",
+    payload: { content: [{ type: "text", text: "helper output" }], isError: false },
+  })
+  const sidebar = renderSidebarItem({ ...event("input", "sidebar-helper"), payload: { text: "sidebar text" } })
+  const fallback = renderFallback({ entries: [], contextMessages: [], state: { version: 1 } })
+
+  assert.match(entry, /class="tool-execution success export-entry"/)
+  assert.match(entry, /class="raw-json"/)
+  assert.match(entry, /helper output/)
+  assert.match(sidebar, /class="tree-node"/)
+  assert.match(sidebar, /data-target="sidebar-helper"/)
+  assert.match(sidebar, /sidebar text/)
+  assert.match(fallback, /class="fallback-block"/)
+  assert.match(fallback, /Fallback export data/)
 })
 
 test("full export output filename timestamp is filesystem safe", () => {
@@ -178,7 +264,8 @@ test("full export HTML can render fallback without recorded events", () => {
     },
   })
 
-  assert.match(html, /No events/)
+  assert.match(html, /No recorded events/)
+  assert.match(html, /class="fallback-block"/)
   assert.match(html, /Fallback export data/)
   assert.match(html, /active-token-management-state/)
 })

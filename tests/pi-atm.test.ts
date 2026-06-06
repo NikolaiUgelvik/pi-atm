@@ -17,6 +17,85 @@ import {
 type MockHandler = (...args: unknown[]) => Promise<unknown> | unknown
 type MockCommand = { handler: (args: string, ctx: unknown) => Promise<void> | void }
 
+async function withFullExportHome(run: (home: string) => Promise<void>) {
+  const home = mkdtempSync(join(tmpdir(), "pi-atm-hooks-"))
+  const previousHome = process.env.HOME
+  const previousFullExport = process.env.PI_ATM_FULL_EXPORT
+  try {
+    process.env.HOME = home
+    process.env.PI_ATM_FULL_EXPORT = "1"
+    await run(home)
+  } finally {
+    restoreEnv("HOME", previousHome)
+    restoreEnv("PI_ATM_FULL_EXPORT", previousFullExport)
+    rmSync(home, { recursive: true, force: true })
+  }
+}
+
+function restoreEnv(name: string, previous: string | undefined) {
+  if (previous === undefined) delete process.env[name]
+  else process.env[name] = previous
+}
+
+function lifecycleMockPi(handlers: Record<string, MockHandler>) {
+  return {
+    on(name: string, handler: MockHandler) {
+      handlers[name] = handler
+    },
+    appendEntry() {},
+    registerTool() {},
+    registerCommand() {},
+    sendMessage() {},
+    sendUserMessage() {},
+  }
+}
+
+function lifecycleContext() {
+  return {
+    cwd: "/tmp/pi-atm-project",
+    sessionId: "test-session",
+    model: { id: "m1", name: "Model 1" },
+    ui: { notify() {}, setStatus() {} },
+    sessionManager: {
+      getEntries: () => [],
+      buildSessionContext: () => ({ messages: [{ role: "user", content: "hello" }] }),
+    },
+  }
+}
+
+async function emitLifecycleHooks(handlers: Record<string, MockHandler>, ctx: ReturnType<typeof lifecycleContext>) {
+  await handlers.session_start?.({ reason: "startup", sessionFile: "session.jsonl" }, ctx)
+  await handlers.input?.({ text: "hello", source: "interactive" }, ctx)
+  await handlers.before_agent_start?.({ prompt: "hello", systemPrompt: "base" }, ctx)
+  await handlers.context?.({ messages: [{ role: "user", content: "hello" }] }, ctx)
+  await handlers.tool_call?.({ toolName: "bash", toolCallId: "tool-1", input: { command: "echo raw" } }, ctx)
+  await handlers.session_shutdown?.({ reason: "quit" }, ctx)
+}
+
+function assertLifecycleExport(home: string) {
+  const { events } = readFullExportEvents(fullExportEventPath(home, "test-session"))
+  assertLifecycleKinds(events.map((event) => event.kind))
+  assertToolCallExport(events.find((event) => event.kind === "tool_call"))
+  assertBeforeStartExport(events.find((event) => event.kind === "before_agent_start"))
+}
+
+function assertLifecycleKinds(kinds: string[]) {
+  assert.deepEqual(
+    kinds.filter((kind) => kind !== "atm_state"),
+    ["session_start", "input", "before_agent_start", "context", "tool_call", "session_shutdown"],
+  )
+}
+
+function assertToolCallExport(toolCall: { toolName?: unknown; toolCallId?: unknown; payload?: unknown } | undefined) {
+  assert.equal(toolCall?.toolName, "bash")
+  assert.equal(toolCall?.toolCallId, "tool-1")
+  assert.deepEqual((toolCall?.payload as { input?: unknown }).input, { command: "echo raw" })
+}
+
+function assertBeforeStartExport(beforeStart: { payload?: unknown } | undefined) {
+  assert.equal(typeof (beforeStart?.payload as { returnedSystemPrompt?: unknown }).returnedSystemPrompt, "string")
+}
+
 test("extension exports a function", () => {
   assert.equal(typeof activeTokenManagement, "function")
 })
@@ -66,74 +145,26 @@ test("hidden alias catalog can be fingerprinted safely", () => {
 })
 
 test("full export records Pi lifecycle hooks when enabled", async () => {
-  const home = mkdtempSync(join(tmpdir(), "pi-atm-hooks-"))
-  const previousHome = process.env.HOME
-  const previousFullExport = process.env.PI_ATM_FULL_EXPORT
-  const handlers: Record<string, MockHandler> = {}
-
-  try {
-    process.env.HOME = home
-    process.env.PI_ATM_FULL_EXPORT = "1"
-    const pi = {
-      on(name: string, handler: MockHandler) {
-        handlers[name] = handler
-      },
-      appendEntry() {},
-      registerTool() {},
-      registerCommand() {},
-      sendMessage() {},
-      sendUserMessage() {},
-    }
-    const ctx = {
-      cwd: "/tmp/pi-atm-project",
-      sessionId: "test-session",
-      model: { id: "m1", name: "Model 1" },
-      ui: { notify() {}, setStatus() {} },
-      sessionManager: {
-        getEntries: () => [],
-        buildSessionContext: () => ({ messages: [{ role: "user", content: "hello" }] }),
-      },
-    }
-
-    activeTokenManagement(pi as never)
-    await handlers.session_start?.({ reason: "startup", sessionFile: "session.jsonl" }, ctx)
-    await handlers.input?.({ text: "hello", source: "interactive" }, ctx)
-    await handlers.before_agent_start?.({ prompt: "hello", systemPrompt: "base" }, ctx)
-    await handlers.context?.({ messages: [{ role: "user", content: "hello" }] }, ctx)
-    await handlers.tool_call?.({ toolName: "bash", toolCallId: "tool-1", input: { command: "echo raw" } }, ctx)
-    await handlers.session_shutdown?.({ reason: "quit" }, ctx)
-
-    const { events } = readFullExportEvents(fullExportEventPath(home, "test-session"))
-    const kinds = events.map((event) => event.kind)
-    assert.deepEqual(
-      kinds.filter((kind) => kind !== "atm_state"),
-      ["session_start", "input", "before_agent_start", "context", "tool_call", "session_shutdown"],
-    )
-    const toolCall = events.find((event) => event.kind === "tool_call")
-    assert.equal(toolCall?.toolName, "bash")
-    assert.equal(toolCall?.toolCallId, "tool-1")
-    assert.deepEqual((toolCall?.payload as { input?: unknown }).input, { command: "echo raw" })
-    const beforeStart = events.find((event) => event.kind === "before_agent_start")
-    assert.equal(typeof (beforeStart?.payload as { returnedSystemPrompt?: unknown }).returnedSystemPrompt, "string")
-  } finally {
-    if (previousHome === undefined) delete process.env.HOME
-    else process.env.HOME = previousHome
-    if (previousFullExport === undefined) delete process.env.PI_ATM_FULL_EXPORT
-    else process.env.PI_ATM_FULL_EXPORT = previousFullExport
-    rmSync(home, { recursive: true, force: true })
-  }
+  await withFullExportHome(async (home) => {
+    const handlers: Record<string, MockHandler> = {}
+    activeTokenManagement(lifecycleMockPi(handlers) as never)
+    await emitLifecycleHooks(handlers, lifecycleContext())
+    assertLifecycleExport(home)
+  })
 })
 
 test("/atm export writes fallback HTML when no full export events exist", async () => {
   const home = mkdtempSync(join(tmpdir(), "pi-atm-export-home-"))
   const cwd = mkdtempSync(join(tmpdir(), "pi-atm-export-cwd-"))
   const previousHome = process.env.HOME
+  const previousFullExport = process.env.PI_ATM_FULL_EXPORT
   const handlers: Record<string, MockHandler> = {}
   const commands: Record<string, MockCommand> = {}
   const notifications: string[] = []
 
   try {
     process.env.HOME = home
+    delete process.env.PI_ATM_FULL_EXPORT
     const pi = {
       on(name: string, handler: MockHandler) {
         handlers[name] = handler
@@ -175,6 +206,8 @@ test("/atm export writes fallback HTML when no full export events exist", async 
   } finally {
     if (previousHome === undefined) delete process.env.HOME
     else process.env.HOME = previousHome
+    if (previousFullExport === undefined) delete process.env.PI_ATM_FULL_EXPORT
+    else process.env.PI_ATM_FULL_EXPORT = previousFullExport
     rmSync(home, { recursive: true, force: true })
     rmSync(cwd, { recursive: true, force: true })
   }
