@@ -1,19 +1,15 @@
+import { clone } from "./clone.js"
 import { compressionToolParameters } from "./compress-tool-schema.js"
 import { appendConsumedSummaries, appendProtectedContent, consumedBlockIdsForMessages } from "./compression-content.js"
+import { asRuntimeContext, toAtmMessages } from "./context-conversion.js"
 import { debugLog } from "./debug.js"
-import { asRuntimeContext, toAtmMessages } from "./index-helpers.js"
-import { isDefined } from "./message-guards.js"
-import {
-  estimateMessages,
-  estimateText,
-  fingerprintMessage,
-  normalizeCompressionRequests,
-  pruneForContext,
-  stripAliasesFromMessages,
-} from "./pruning.js"
+import { isDefined } from "./defined.js"
+import { stripAliasesFromMessages } from "./message-alias-strip.js"
+import { fingerprintMessage } from "./message-fingerprint.js"
+import { estimateMessages, estimateText, normalizeCompressionRequests, pruneForContext } from "./pruning.js"
+import { textResult } from "./tool-result.js"
 import type { Compression, CompressionToolParams, Config, RuntimeContext, State } from "./types.js"
 import { EXT } from "./types.js"
-import { clone, textResult } from "./utils.js"
 
 export type CompressReports = {
   notifyCompression(ctx: RuntimeContext, created: Compression[]): void

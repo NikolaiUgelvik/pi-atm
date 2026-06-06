@@ -1,7 +1,9 @@
+import { detectCompaction } from "./compaction-detection.js"
+import { asRuntimeContext, toAtmMessages } from "./context-conversion.js"
 import { debugLog, debugSnapshot } from "./debug.js"
 import type { FullExportEventInput } from "./full-export/recorder.js"
 import { recordFullExportContext } from "./full-export/runtime.js"
-import { applyPendingManualTrigger, asRuntimeContext, detectCompaction, toAtmMessages } from "./index-helpers.js"
+import { applyPendingManualTrigger } from "./manual-trigger.js"
 import { pruneForContext } from "./pruning.js"
 import type { Config, RuntimeContext, State } from "./types.js"
 
@@ -50,18 +52,38 @@ function transformedContext(
   const compacted = maybeResetCompaction(contextMessages, deps)
   const trigger = applyPendingTrigger(contextMessages, deps.getState())
   const pruned = prunedContext(trigger.messages, deps)
-  const nudge = deps.nudgeRuntime.maybeInjectNudge(
-    pruned.messages,
-    pruned.report,
-    asRuntimeContext(ctx),
-    trigger.messages,
-  )
-  const messages = nudge?.changed ? nudge.messages : pruned.messages
-  const changed = pruned.changed || !!nudge?.changed
+  const nudge = contextNudge(pruned, trigger.messages, ctx, deps)
+  const messages = transformedMessages(pruned.messages, nudge)
   debugContext(messages, pruned.report, !!nudge?.changed, deps)
   updateContextStats(pruned.report, deps.getState())
-  if (changed || trigger.changed || compacted) deps.save()
+  saveTransformedContext(
+    { prunedChanged: pruned.changed, triggerChanged: trigger.changed, compacted, nudgeChanged: !!nudge?.changed },
+    deps,
+  )
   return { messages, report: pruned.report, trigger, compacted, nudge }
+}
+
+function contextNudge(
+  pruned: ReturnType<typeof prunedContext>,
+  originalMessages: ReturnType<typeof toAtmMessages>,
+  ctx: RuntimeContext,
+  deps: ContextHandlerDeps,
+) {
+  return deps.nudgeRuntime.maybeInjectNudge(pruned.messages, pruned.report, asRuntimeContext(ctx), originalMessages)
+}
+
+function transformedMessages(
+  messages: ReturnType<typeof toAtmMessages>,
+  nudge: ReturnType<ContextHandlerDeps["nudgeRuntime"]["maybeInjectNudge"]>,
+) {
+  return nudge?.changed ? nudge.messages : messages
+}
+
+function saveTransformedContext(
+  flags: { prunedChanged: boolean; triggerChanged: boolean; compacted?: string; nudgeChanged: boolean },
+  deps: ContextHandlerDeps,
+) {
+  if (flags.prunedChanged || flags.triggerChanged || flags.compacted || flags.nudgeChanged) deps.save()
 }
 
 function maybeResetCompaction(contextMessages: ReturnType<typeof toAtmMessages>, deps: ContextHandlerDeps) {

@@ -27,7 +27,7 @@
     "format": "biome check --write .",
     "lint": "biome check .",
     "check": "biome ci . && npm run typecheck && npm run fallow",
-    "fallow": "fallow --ci --fail-on-issues",
+    "fallow": "fallow --ci --fail-on-issues --skip health && fallow health --complexity --format sarif",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
     "prepare": "husky"

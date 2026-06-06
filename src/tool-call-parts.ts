@@ -15,15 +15,3 @@ export function hasPartId(part: ToolCallPart): part is ToolCallPart & { id: stri
 export function toolCallsOf(message: AtmMessage | undefined): ToolCallPart[] {
   return Array.isArray(message?.content) ? message.content.filter(isToolCall) : []
 }
-
-export function hasToolCallId(message: AtmMessage): message is AtmMessage & { toolCallId: string } {
-  return typeof message.toolCallId === "string" && message.toolCallId.length > 0
-}
-
-export function isToolResultWithId(message: AtmMessage): message is AtmMessage & { toolCallId: string } {
-  return message.role === "toolResult" && hasToolCallId(message)
-}
-
-export function isDefined<T>(value: T | undefined): value is T {
-  return value !== undefined
-}

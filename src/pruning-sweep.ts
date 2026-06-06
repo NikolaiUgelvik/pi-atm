@@ -1,7 +1,11 @@
-import { hasToolCallId } from "./message-guards.js"
+import { matchesAny } from "./glob-patterns.js"
+import { isProtectedToolCall } from "./protected-tool-call.js"
+import { toolSet } from "./protected-tool-set.js"
 import { messageIsTurnProtected } from "./pruning-protection.js"
+import { estimateMessages } from "./token-estimates.js"
+import { findToolCallIndex, toolCallFor } from "./tool-call-lookup.js"
+import { hasToolCallId } from "./tool-result-guards.js"
 import type { AtmMessage, Config, PrunedTool, State } from "./types.js"
-import { estimateMessages, findToolCallIndex, isProtectedToolCall, matchesAny, toolCallFor, toolSet } from "./utils.js"
 
 export function sweepTools(messages: AtmMessage[], n: number | undefined, config: Config, state: State) {
   const candidates = sweepCandidates(messages, n, config, existingPrunedTools(state))

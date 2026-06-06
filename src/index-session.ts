@@ -1,9 +1,10 @@
-import { getConfigWarnings, loadConfig, loadState } from "./config.js"
+import { getConfigWarnings, loadConfig } from "./config.js"
+import { asRuntimeContext } from "./context-conversion.js"
 import type { FullExportEventInput } from "./full-export/recorder.js"
 import { recordFullExportSessionStart } from "./full-export/runtime.js"
-import { asRuntimeContext } from "./index-helpers.js"
 import { loadPersistentState, sessionKeyFromContext } from "./persistence.js"
 import { ensurePromptDefaults } from "./prompts.js"
+import { loadState } from "./state-entry.js"
 import type { Config, RuntimeContext, State } from "./types.js"
 import { EXT } from "./types.js"
 

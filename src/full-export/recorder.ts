@@ -66,19 +66,37 @@ export function readFullExportEvents(path: string) {
   const events: FullExportEvent[] = []
   const warnings: string[] = []
   if (!existsSync(path)) return { events, warnings }
-  const lines = readFileSync(path, "utf8").split(/\r?\n/)
-  for (const [index, line] of lines.entries()) {
-    if (!line.trim()) continue
-    try {
-      const parsed = JSON.parse(line) as FullExportEvent
-      if (parsed.version === 1 && typeof parsed.kind === "string") events.push(parsed)
-      else warnings.push(`Ignored invalid full export event on line ${index + 1}.`)
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error)
-      warnings.push(`Could not parse full export JSONL line ${index + 1}: ${message}`)
-    }
-  }
+  for (const [index, line] of fullExportLines(path).entries()) collectFullExportLine(line, index + 1, events, warnings)
   return { events, warnings }
+}
+
+function fullExportLines(path: string) {
+  return readFileSync(path, "utf8").split(/\r?\n/)
+}
+
+function collectFullExportLine(line: string, lineNumber: number, events: FullExportEvent[], warnings: string[]) {
+  if (!line.trim()) return
+  const parsed = parseFullExportLine(line, lineNumber)
+  if (typeof parsed === "string") warnings.push(parsed)
+  else events.push(parsed)
+}
+
+function parseFullExportLine(line: string, lineNumber: number) {
+  try {
+    return validFullExportEvent(JSON.parse(line)) ?? `Ignored invalid full export event on line ${lineNumber}.`
+  } catch (error: unknown) {
+    return `Could not parse full export JSONL line ${lineNumber}: ${errorMessage(error)}`
+  }
+}
+
+function validFullExportEvent(value: unknown) {
+  if (!value || typeof value !== "object") return undefined
+  const event = value as FullExportEvent
+  return event.version === 1 && typeof event.kind === "string" ? event : undefined
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error)
 }
 
 export function buildFallbackExportData(

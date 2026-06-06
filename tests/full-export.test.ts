@@ -27,6 +27,20 @@ function event(kind: FullExportEvent["kind"], id: string = kind): FullExportEven
   }
 }
 
+function renderTestExport(events: FullExportEvent[], warnings: string[] = []) {
+  return renderFullExportHtml({
+    events,
+    warnings,
+    generatedAt: "2026-06-06T00:00:00.000Z",
+    sessionKey: "session-1",
+    cwd: "/tmp/project",
+  })
+}
+
+function assertHtmlMatches(html: string, patterns: RegExp[]) {
+  for (const pattern of patterns) assert.match(html, pattern)
+}
+
 test("full export filters parse exact kinds and categories", () => {
   const parsed = parseFullExportFilter("provider_request, tool, context")
 
@@ -133,8 +147,8 @@ test("full export fallback captures entries, context messages, and ATM state", (
 })
 
 test("full export HTML uses Pi-style shell and escapes content", () => {
-  const html = renderFullExportHtml({
-    events: [
+  const html = renderTestExport(
+    [
       { ...event("input", "e1"), payload: { type: "input", text: "Hello & goodbye", source: "interactive" } },
       {
         ...event("provider_request", "e2"),
@@ -143,27 +157,26 @@ test("full export HTML uses Pi-style shell and escapes content", () => {
         payload: { prompt: "<script>alert(1)</script>", messages: [{ role: "user", content: "secret" }] },
       },
     ],
-    warnings: ["Exact provider payload history unavailable before recording was enabled."],
-    generatedAt: "2026-06-06T00:00:00.000Z",
-    sessionKey: "session-1",
-    cwd: "/tmp/project",
-  })
+    ["Exact provider payload history unavailable before recording was enabled."],
+  )
 
-  assert.match(html, /<div id="app">/)
-  assert.match(html, /<aside id="sidebar">/)
-  assert.match(html, /<div id="sidebar-resizer"><\/div>/)
-  assert.match(html, /<main id="content">/)
-  assert.match(html, /<section id="messages">/)
-  assert.match(html, /class="sidebar-search"/)
-  assert.match(html, /class="filter-btn active" data-filter="all"/)
-  assert.match(html, /class="tree-container"/)
-  assert.match(html, /class="tree-status"/)
-  assert.match(html, /class="user-message export-entry"/)
-  assert.match(html, /class="provider-audit export-entry"/)
-  assert.match(html, /Exact provider payload history unavailable/)
-  assert.match(html, /test-provider/)
-  assert.match(html, /Hello &amp; goodbye/)
-  assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/)
+  assertHtmlMatches(html, [
+    /<div id="app">/,
+    /<aside id="sidebar">/,
+    /<div id="sidebar-resizer"><\/div>/,
+    /<main id="content">/,
+    /<section id="messages">/,
+    /class="sidebar-search"/,
+    /class="filter-btn active" data-filter="all"/,
+    /class="tree-container"/,
+    /class="tree-status"/,
+    /class="user-message export-entry"/,
+    /class="provider-audit export-entry"/,
+    /Exact provider payload history unavailable/,
+    /test-provider/,
+    /Hello &amp; goodbye/,
+    /&lt;script&gt;alert\(1\)&lt;\/script&gt;/,
+  ])
   assert.equal(html.includes("<script>alert(1)</script>"), false)
 })
 
@@ -202,25 +215,21 @@ test("full export HTML renders all event categories with raw JSON details", () =
     { ...event("atm_state", "atm-1"), payload: { state: { stats: { contextRuns: 2 } } } },
   ]
 
-  const html = renderFullExportHtml({
-    events,
-    warnings: [],
-    generatedAt: "2026-06-06T00:00:00.000Z",
-    sessionKey: "session-1",
-    cwd: "/tmp/project",
-  })
+  const html = renderTestExport(events)
 
   assert.equal((html.match(/class="raw-json"/g) ?? []).length, events.length)
   assert.equal((html.match(/class="tree-node/g) ?? []).length, events.length)
-  assert.match(html, /class="assistant-message export-entry"/)
-  assert.match(html, /class="tool-execution success export-entry"/)
-  assert.match(html, /class="context-audit export-entry"/)
-  assert.match(html, /class="provider-audit export-entry"/)
-  assert.match(html, /class="atm-audit export-entry"/)
-  assert.match(html, /assistant replies/)
-  assert.match(html, /src\/full-export\/html\.ts/)
-  assert.match(html, /original 1 · transformed 2/)
-  assert.match(html, /gpt-test/)
+  assertHtmlMatches(html, [
+    /class="assistant-message export-entry"/,
+    /class="tool-execution success export-entry"/,
+    /class="context-audit export-entry"/,
+    /class="provider-audit export-entry"/,
+    /class="atm-audit export-entry"/,
+    /assistant replies/,
+    /src\/full-export\/html\.ts/,
+    /original 1 · transformed 2/,
+    /gpt-test/,
+  ])
 })
 
 test("full export render helpers expose sidebar, entry, and fallback markup", () => {

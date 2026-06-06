@@ -1,8 +1,8 @@
+import { clone } from "./clone.js"
 import { allTimeStats } from "./persistence.js"
 import { pruneForContext } from "./pruning.js"
 import { formatReport } from "./report.js"
 import type { Compression, RuntimeContext, RuntimeReportsDeps, RuntimeUsage } from "./types.js"
-import { clone } from "./utils.js"
 
 export function createRuntimeReports(deps: RuntimeReportsDeps) {
   const getConfig = deps.getConfig

@@ -1,4 +1,4 @@
-import { toolCallsOf } from "./message-guards.js"
+import { toolCallsOf } from "./tool-call-parts.js"
 import type { AtmMessage, Config } from "./types.js"
 
 export function messageIsTurnProtected(messages: AtmMessage[], index: number, config: Config) {

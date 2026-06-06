@@ -1,20 +1,5 @@
-import type { AtmMessage, MessagePart, RuntimeContext } from "./types.js"
-import { clone, fingerprintMessage } from "./utils.js"
-
-export function detectCompaction(messages: AtmMessage[]) {
-  const compact = [...messages]
-    .reverse()
-    .find(
-      (message) =>
-        message.role === "assistant" &&
-        (message.compacted ||
-          message.isCompaction ||
-          /\b(compacted|conversation summary|summary of the conversation)\b/i.test(
-            textFromMessage(message).slice(0, 1000),
-          )),
-    )
-  return compact ? fingerprintMessage(compact) : undefined
-}
+import { clone } from "./clone.js"
+import type { AtmMessage, MessagePart } from "./types.js"
 
 export function applyPendingManualTrigger(messages: AtmMessage[], pendingPrompt?: string) {
   if (!pendingPrompt) return unchanged(messages)
@@ -57,23 +42,4 @@ function lastTextPartIndex(content: MessagePart[]) {
     if (content[index]?.type === "text") return index
   }
   return -1
-}
-
-export function parseCompressionId(value?: string) {
-  const match = /^b?(\d+)$/.exec(value || "")
-  return match ? Number(match[1]) : 0
-}
-
-export function toAtmMessages(messages: unknown): AtmMessage[] {
-  return Array.isArray(messages) ? (messages as AtmMessage[]) : []
-}
-
-export function asRuntimeContext(ctx: unknown): RuntimeContext {
-  return ctx as RuntimeContext
-}
-
-function textFromMessage(message: AtmMessage) {
-  if (typeof message.content === "string") return message.content
-  if (Array.isArray(message.content)) return message.content.map((part) => part.text ?? part.summary ?? "").join("\n")
-  return String(message.summary ?? "")
 }

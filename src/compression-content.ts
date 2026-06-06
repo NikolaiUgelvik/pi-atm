@@ -1,5 +1,7 @@
+import { compressionBlockId } from "./compression-block-alias.js"
+import { textOf } from "./message-text.js"
+import { isProtectedToolCall } from "./protected-tool-call.js"
 import type { AtmMessage, Compression, Config, MessagePart, ToolCallPart } from "./types.js"
-import { compressionBlockId, isProtectedToolCall, textOf } from "./utils.js"
 
 export function consumedBlockIdsForMessages(selected: AtmMessage[]) {
   return [...new Set(selected.map(compressionBlockId).filter((id): id is number => Number.isFinite(id)))]

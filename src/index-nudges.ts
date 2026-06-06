@@ -1,9 +1,11 @@
-import { isToolCall } from "./message-guards.js"
+import { resolveLimit } from "./context-limit.js"
+import { escapeAttr } from "./html-attr.js"
+import { fingerprintMessage } from "./message-fingerprint.js"
 import { prompt } from "./prompts.js"
-import { estimateMessages, fingerprintMessage } from "./pruning.js"
+import { estimateMessages } from "./pruning.js"
+import { isToolCall } from "./tool-call-parts.js"
 import type { AtmMessage, Config, NudgeDraft, NudgeType, PruneReport, RuntimeContext, State } from "./types.js"
 import { EXT } from "./types.js"
-import { escapeAttr, resolveLimit } from "./utils.js"
 
 export type NudgeRuntimeDeps = {
   getConfig: () => Config

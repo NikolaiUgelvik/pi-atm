@@ -5,14 +5,11 @@ import { join } from "node:path"
 import test from "node:test"
 import activeTokenManagement from "../extensions/pi-atm.js"
 import { fullExportEventPath, readFullExportEvents } from "../src/full-export/recorder.js"
+import { injectMessageAliases } from "../src/message-alias-inject.js"
+import { stripAliasesFromMessages } from "../src/message-alias-strip.js"
+import { fingerprintMessage } from "../src/message-fingerprint.js"
+import { indexFromAlias } from "../src/message-id-alias.js"
 import { EXT } from "../src/types.js"
-import {
-  fingerprintMessage,
-  indexFromAlias,
-  injectMessageAliases,
-  stripAliasesFromMessages,
-  textOf,
-} from "../src/utils.js"
 
 type MockHandler = (...args: unknown[]) => Promise<unknown> | unknown
 type MockCommand = { handler: (args: string, ctx: unknown) => Promise<void> | void }
@@ -96,31 +93,43 @@ function assertBeforeStartExport(beforeStart: { payload?: unknown } | undefined)
   assert.equal(typeof (beforeStart?.payload as { returnedSystemPrompt?: unknown }).returnedSystemPrompt, "string")
 }
 
+function assertAliasCatalog(catalog: ReturnType<typeof injectMessageAliases>[number] | undefined) {
+  assertAliasCatalogEnvelope(catalog)
+  assertAliasCatalogContent(String(catalog?.content))
+}
+
+function assertAliasCatalogEnvelope(catalog: ReturnType<typeof injectMessageAliases>[number] | undefined) {
+  assert.equal(catalog?.role, "custom")
+  assert.equal(catalog?.customType, EXT)
+  assert.equal(catalog?.display, false)
+}
+
+function assertAliasCatalogContent(content: string) {
+  assert.match(content, /<atm-aliases\b/)
+  assert.match(content, /id="m0001"/)
+  assert.match(content, /id="m0002"/)
+  assert.match(content, /hello/)
+  assert.match(content, /world/)
+}
+
+function assertVisibleAliasMessages(withAliases: ReturnType<typeof injectMessageAliases>) {
+  assert.equal(withAliases.length, 3)
+  assert.equal(String(withAliases[0]?.content).includes("atm-message"), false)
+  assert.equal(JSON.stringify(withAliases[1]?.content).includes("atm-message"), false)
+}
+
 test("extension exports a function", () => {
   assert.equal(typeof activeTokenManagement, "function")
 })
 
 test("message aliases are model-visible without mutating visible message text", () => {
-  const messages = [
+  const withAliases = injectMessageAliases([
     { role: "user", content: "hello" },
     { role: "assistant", content: [{ type: "text", text: "world" }] },
-  ]
+  ])
 
-  const withAliases = injectMessageAliases(messages)
-
-  assert.equal(withAliases.length, 3)
-  assert.equal(textOf(withAliases[0]).includes("atm-message"), false)
-  assert.equal(textOf(withAliases[1]).includes("atm-message"), false)
-
-  const catalog = withAliases[2]
-  assert.equal(catalog?.role, "custom")
-  assert.equal(catalog?.customType, EXT)
-  assert.equal(catalog?.display, false)
-  assert.match(String(catalog?.content), /<atm-aliases\b/)
-  assert.match(String(catalog?.content), /id="m0001"/)
-  assert.match(String(catalog?.content), /id="m0002"/)
-  assert.match(String(catalog?.content), /hello/)
-  assert.match(String(catalog?.content), /world/)
+  assertVisibleAliasMessages(withAliases)
+  assertAliasCatalog(withAliases[2])
 })
 
 test("stripping aliases removes the hidden catalog and preserves compression indices", () => {

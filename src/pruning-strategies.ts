@@ -1,19 +1,15 @@
-import { hasToolCallId, isToolCallWithId, toolCallsOf } from "./message-guards.js"
+import { matchesAny } from "./glob-patterns.js"
+import { textOf } from "./message-text.js"
+import { isProtectedToolCall } from "./protected-tool-call.js"
+import { toolSet } from "./protected-tool-set.js"
 import { messageIsTurnProtected } from "./pruning-protection.js"
+import { stableJson } from "./stable-json.js"
+import { estimateMessages } from "./token-estimates.js"
+import { findToolCallIndex, normalizeToolArgs, toolCallFor, toolCallKey } from "./tool-call-lookup.js"
+import { isToolCallWithId, toolCallsOf } from "./tool-call-parts.js"
 import { pruneFailedToolInput } from "./tool-pruning.js"
+import { hasToolCallId } from "./tool-result-guards.js"
 import type { AtmMessage, Config, MessagePart, PruneReport, State } from "./types.js"
-import {
-  estimateMessages,
-  findToolCallIndex,
-  isProtectedToolCall,
-  matchesAny,
-  normalizeToolArgs,
-  stableJson,
-  textOf,
-  toolCallFor,
-  toolCallKey,
-  toolSet,
-} from "./utils.js"
 
 export function applyDeduplication(messages: AtmMessage[], config: Config, state: State, report?: PruneReport) {
   if (!config.strategies.deduplication.enabled) return messages

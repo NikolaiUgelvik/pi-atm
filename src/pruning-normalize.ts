@@ -1,3 +1,7 @@
+import { indexFromMessageOrBlockAlias } from "./compression-block-alias.js"
+import { range } from "./index-range.js"
+import { indexFromAlias } from "./message-id-alias.js"
+import { messageTouchesProtectedToolOrFile } from "./protected-message.js"
 import { messageIsTurnProtected } from "./pruning-protection.js"
 import type {
   AtmMessage,
@@ -6,7 +10,6 @@ import type {
   Config,
   NormalizedCompressionRequest,
 } from "./types.js"
-import { indexFromAlias, indexFromMessageOrBlockAlias, messageTouchesProtectedToolOrFile, range } from "./utils.js"
 
 export function normalizeCompressionRequests(
   messages: AtmMessage[],

@@ -1,18 +1,14 @@
-import { hasToolCallId } from "./message-guards.js"
+import { clone } from "./clone.js"
+import { escapeAttr } from "./html-attr.js"
+import { injectMessageAliases } from "./message-alias-inject.js"
+import { fingerprintMessage } from "./message-fingerprint.js"
 import { stripStaleProviderMetadata } from "./provider-metadata.js"
 import { applyDeduplication, applyErrorPurging } from "./pruning-strategies.js"
 import { expandRangeToToolBoundaries, sanitizeToolPairing } from "./pruning-tool-pairs.js"
+import { estimateMessages } from "./token-estimates.js"
+import { hasToolCallId } from "./tool-result-guards.js"
 import type { AtmMessage, Compression, Config, PruneReport, State } from "./types.js"
 import { EXT } from "./types.js"
-import {
-  clone,
-  escapeAttr,
-  estimateMessages,
-  estimateText,
-  fingerprintMessage,
-  injectMessageAliases,
-  stripAliasesFromMessages,
-} from "./utils.js"
 
 export function pruneForContext(
   inputMessages: AtmMessage[],
@@ -63,38 +59,50 @@ function applyCompressions(messages: AtmMessage[], state: State, config: Config,
 }
 
 function applyRangeCompression(messages: AtmMessage[], c: Compression, config: Config, report?: PruneReport) {
-  const fps = messages.map(fingerprintMessage)
-  let start = fps.indexOf(c.startFingerprint || "")
-  if (start < 0) return messages
-  let end = -1
-  for (let i = start; i < fps.length; i++)
-    if (fps[i] === c.endFingerprint) {
-      end = i
-      break
-    }
-  if (end < start) return messages
-  const protectedRecent = Math.max(0, messages.length - config.compress.keepRecentMessages)
-  if (end >= protectedRecent) return messages
-  const balanced = expandRangeToToolBoundaries(messages, start, end)
-  start = balanced.start
-  end = balanced.end
-  if (end >= protectedRecent) return messages
+  const range = compressibleRange(messages, c, config)
+  if (!range) return messages
   const replacement = compressionMessage(c)
-  const beforeTokens = estimateMessages(messages.slice(start, end + 1))
+  reportRangeCompression(messages, c, range, replacement, report)
+  return [...messages.slice(0, range.start), replacement, ...messages.slice(range.end + 1)]
+}
+
+function compressibleRange(messages: AtmMessage[], c: Compression, config: Config) {
+  const matched = matchedCompressionRange(messages.map(fingerprintMessage), c)
+  if (!matched) return undefined
+  const protectedRecent = Math.max(0, messages.length - config.compress.keepRecentMessages)
+  if (matched.end >= protectedRecent) return undefined
+  const balanced = expandRangeToToolBoundaries(messages, matched.start, matched.end)
+  return balanced.end >= protectedRecent ? undefined : balanced
+}
+
+function matchedCompressionRange(fingerprints: string[], c: Compression) {
+  const start = fingerprints.indexOf(c.startFingerprint || "")
+  if (start < 0) return undefined
+  const end = fingerprints.indexOf(c.endFingerprint || "", start)
+  return end < start ? undefined : { start, end }
+}
+
+function reportRangeCompression(
+  messages: AtmMessage[],
+  c: Compression,
+  range: { start: number; end: number },
+  replacement: AtmMessage,
+  report?: PruneReport,
+) {
+  const beforeTokens = estimateMessages(messages.slice(range.start, range.end + 1))
   const afterTokens = estimateMessages([replacement])
   report?.compressions.push({
     id: c.id,
     topic: c.topic,
     mode: c.mode,
-    messages: end - start + 1,
+    messages: range.end - range.start + 1,
     beforeTokens,
     afterTokens,
     savedTokens: Math.max(0, beforeTokens - afterTokens),
-    startIndex: start,
-    endIndex: end,
+    startIndex: range.start,
+    endIndex: range.end,
     consumedBlockIds: c.consumedBlockIds,
   })
-  return [...messages.slice(0, start), replacement, ...messages.slice(end + 1)]
 }
 
 function applyMessageCompression(messages: AtmMessage[], c: Compression, config: Config, report?: PruneReport) {
@@ -168,4 +176,4 @@ function countByRole(messages: AtmMessage[]) {
 
 export { normalizeCompressionRequests } from "./pruning-normalize.js"
 export { sweepTools } from "./pruning-sweep.js"
-export { estimateMessages, estimateText, fingerprintMessage, stripAliasesFromMessages }
+export { estimateMessages, estimateText } from "./token-estimates.js"

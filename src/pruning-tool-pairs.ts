@@ -1,14 +1,9 @@
-import {
-  hasPartId,
-  hasToolCallId,
-  isToolCall,
-  isToolCallWithId,
-  isToolResultWithId,
-  toolCallsOf,
-} from "./message-guards.js"
+import { escapeAttr } from "./html-attr.js"
+import { textOf } from "./message-text.js"
+import { hasPartId, isToolCall, isToolCallWithId, toolCallsOf } from "./tool-call-parts.js"
+import { hasToolCallId, isToolResultWithId } from "./tool-result-guards.js"
 import type { AtmMessage, MessagePart } from "./types.js"
 import { EXT } from "./types.js"
-import { escapeAttr, textOf } from "./utils.js"
 
 type ToolRange = { start: number; end: number }
 type ExpandedToolRange = ToolRange & { changed: boolean }

@@ -1,7 +1,15 @@
 {
   "$schema": "./node_modules/fallow/schema.json",
   "sealed": true,
-  "entry": ["extensions/pi-atm.ts", "tests/**/*.test.ts"],
+  "entry": ["extensions/pi-atm.ts"],
+  "framework": [
+    {
+      "name": "node-test-roots",
+      "detection": { "type": "fileExists", "pattern": "tests/**/*.test.ts" },
+      "entryPoints": ["tests/**/*.test.ts"],
+      "entryPointRole": "test"
+    }
+  ],
   "ignorePatterns": ["dist/**", "node_modules/**", ".cache/**", "coverage/**"],
   "includeEntryExports": true,
   "duplicates": {
