@@ -1,4 +1,4 @@
-import type { AtmMessage } from "./types.js"
+import type { AtmMessage, RuntimeContext } from "./types.js"
 import { clone, fingerprintMessage } from "./utils.js"
 
 export function detectCompaction(messages: AtmMessage[]) {
@@ -49,6 +49,14 @@ export function applyPendingManualTrigger(messages: AtmMessage[], pendingPrompt?
 export function parseCompressionId(value?: string) {
   const match = /^b?(\d+)$/.exec(value || "")
   return match ? Number(match[1]) : 0
+}
+
+export function toAtmMessages(messages: unknown): AtmMessage[] {
+  return Array.isArray(messages) ? (messages as AtmMessage[]) : []
+}
+
+export function asRuntimeContext(ctx: unknown): RuntimeContext {
+  return ctx as RuntimeContext
 }
 
 function textFromMessage(message: AtmMessage) {

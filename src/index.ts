@@ -1,9 +1,22 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
-import { Type } from "typebox"
+import { compressionToolParameters } from "./compress-tool-schema.js"
 import { appendConsumedSummaries, appendProtectedContent, consumedBlockIdsForMessages } from "./compression-content.js"
 import { getConfigWarnings, loadConfig, loadState } from "./config.js"
 import { debugLog, debugSnapshot } from "./debug.js"
-import { applyPendingManualTrigger, detectCompaction, parseCompressionId } from "./index-helpers.js"
+import { runFullExportCommand } from "./full-export/command.js"
+import { registerFullExportHookEvents } from "./full-export/hook-events.js"
+import {
+  createFullExportRuntime,
+  recordFullExportContext,
+  recordFullExportSessionStart,
+} from "./full-export/runtime.js"
+import {
+  applyPendingManualTrigger,
+  asRuntimeContext,
+  detectCompaction,
+  parseCompressionId,
+  toAtmMessages,
+} from "./index-helpers.js"
 import { isDefined, isToolCall } from "./message-guards.js"
 import { loadPersistentState, savePersistentState, sessionKeyFromContext } from "./persistence.js"
 import { ensurePromptDefaults, prompt } from "./prompts.js"
@@ -36,11 +49,17 @@ export default function activeTokenManagement(pi: ExtensionAPI) {
   let state: State = emptyState()
   let sessionKey = "default"
   let cwd = process.cwd()
+  const fullExport = createFullExportRuntime({
+    getConfig: () => config,
+    getSessionKey: () => sessionKey,
+    getCwd: () => cwd,
+  })
 
   const save = () => {
     state.lastUpdated = Date.now()
     pi.appendEntry(STATE_TYPE, state)
     savePersistentState(sessionKey, state)
+    fullExport.record({ kind: "atm_state", payload: { reason: "save", state } })
   }
   const reports = createRuntimeReports({
     getConfig: () => config,
@@ -50,12 +69,14 @@ export default function activeTokenManagement(pi: ExtensionAPI) {
     notify: (ctx: RuntimeContext, msg: string, level: NotifyLevel) => notify(ctx, msg, level),
   })
 
-  pi.on("session_start", async (_event, ctx) => {
+  pi.on("session_start", async (event, ctx) => {
+    const runtimeCtx = asRuntimeContext(ctx)
     cwd = ctx.cwd ?? process.cwd()
     config = loadConfig(cwd)
     ensurePromptDefaults(config)
-    sessionKey = sessionKeyFromContext(asRuntimeContext(ctx), cwd)
-    const entryState = loadState(ctx.sessionManager.getEntries())
+    sessionKey = sessionKeyFromContext(runtimeCtx, cwd)
+    const entries = ctx.sessionManager.getEntries()
+    const entryState = loadState(entries)
     const fileState = loadPersistentState(sessionKey)
     state = fileState && (fileState.lastUpdated ?? 0) >= (entryState.lastUpdated ?? 0) ? fileState : entryState
     state.sessionKey = sessionKey
@@ -63,16 +84,39 @@ export default function activeTokenManagement(pi: ExtensionAPI) {
     if (getConfigWarnings().length > 5)
       ctx.ui.notify(`ATM config warning: ${getConfigWarnings().length - 5} more warnings omitted.`, "error")
     if (config.enabled) ctx.ui.setStatus(EXT, `ATM ${activeCompressions().length} active`)
+    if (fullExport.refresh())
+      recordFullExportSessionStart({
+        record: fullExport.record,
+        config,
+        ctx: runtimeCtx,
+        cwd,
+        sessionKey,
+        event,
+        entriesCount: entries.length,
+      })
   })
 
+  registerFullExportHookEvents(pi as never, fullExport.record)
+
   pi.on("before_agent_start", async (event) => {
-    if (!config.enabled || isManual()) return
-    return { systemPrompt: `${event.systemPrompt || ""}\n\n${prompt(config, cwd, "system.md")}` }
+    const systemPrompt =
+      config.enabled && !isManual() ? `${event.systemPrompt || ""}\n\n${prompt(config, cwd, "system.md")}` : undefined
+    fullExport.record({ kind: "before_agent_start", payload: { ...event, returnedSystemPrompt: systemPrompt } })
+    if (!systemPrompt) return
+    return { systemPrompt }
   })
 
   pi.on("context", async (event, ctx) => {
-    if (!config.enabled) return
     const contextMessages = toAtmMessages(event.messages)
+    if (!config.enabled) {
+      recordFullExportContext({
+        record: fullExport.record,
+        originalMessages: contextMessages,
+        transformedMessages: contextMessages,
+        atmEnabled: false,
+      })
+      return
+    }
     const compacted = detectCompaction(contextMessages)
     if (compacted && compacted !== state.lastCompaction) resetForCompaction(compacted)
     const trigger = applyPendingManualTrigger(contextMessages, state.manualPendingPrompt)
@@ -99,6 +143,17 @@ export default function activeTokenManagement(pi: ExtensionAPI) {
     state.stats.lastContext = report
     if (report.savedTokens > 0) state.stats.estimatedTokensSaved += report.savedTokens
     if (changed || trigger.changed || compacted) save()
+    recordFullExportContext({
+      record: fullExport.record,
+      originalMessages: contextMessages,
+      trigger,
+      compacted,
+      transformedMessages: messages,
+      report,
+      nudge,
+      atmEnabled: true,
+      manualMode: isManual(),
+    })
     return { messages: messages as unknown as typeof event.messages }
   })
 
@@ -113,35 +168,7 @@ export default function activeTokenManagement(pi: ExtensionAPI) {
       "When using compress, provide detailed technical summaries that preserve decisions, file paths, commands, errors, and next steps.",
       "Do not compress the most recent active debugging/tool-output context unless it is clearly stale.",
     ],
-    parameters: Type.Object({
-      topic: Type.Optional(Type.String({ description: "Short label/topic for this compression." })),
-      summary: Type.Optional(
-        Type.String({ description: "High-fidelity technical summary for legacy single-range calls." }),
-      ),
-      content: Type.Optional(
-        Type.Array(
-          Type.Object({
-            startId: Type.Optional(Type.String({ description: "Start message alias, e.g. m0001, for range mode." })),
-            endId: Type.Optional(Type.String({ description: "End message alias, e.g. m0010, for range mode." })),
-            messageId: Type.Optional(
-              Type.String({
-                description: "Message alias, e.g. m0001, or compression block alias, e.g. b1, for message mode.",
-              }),
-            ),
-            topic: Type.Optional(Type.String()),
-            summary: Type.String(),
-          }),
-        ),
-      ),
-      focus: Type.Optional(Type.String({ description: "What this compression focused on." })),
-      mode: Type.Optional(Type.Union([Type.Literal("range"), Type.Literal("message")])),
-      target: Type.Optional(
-        Type.Union([Type.Literal("stale"), Type.Literal("since_last_user"), Type.Literal("all_except_recent")]),
-      ),
-      keepRecentMessages: Type.Optional(Type.Number({ description: "Number of recent messages to keep verbatim." })),
-      startIndex: Type.Optional(Type.Number({ description: "Optional context message start index, inclusive." })),
-      endIndex: Type.Optional(Type.Number({ description: "Optional context message end index, inclusive." })),
-    }),
+    parameters: compressionToolParameters,
     async execute(_toolCallId, params: CompressionToolParams, _signal, _onUpdate, ctx) {
       if (!config.enabled) return textResult("ATM is disabled.", true)
       if (config.compress.permission === "deny") return textResult("compress is denied by configuration.", true)
@@ -224,7 +251,7 @@ export default function activeTokenManagement(pi: ExtensionAPI) {
 
   pi.registerCommand("atm", {
     description:
-      "Active Token Management: compress by default; context, stats, sweep, decompress, recompress, manual, enable, disable",
+      "Active Token Management: compress by default; export, context, stats, sweep, decompress, recompress, manual, enable, disable",
     handler: async (args, ctx) => {
       const [cmd, ...rest] = (args || "").trim().split(/\s+/).filter(Boolean)
       const tail = rest.join(" ")
@@ -234,9 +261,12 @@ export default function activeTokenManagement(pi: ExtensionAPI) {
       switch (cmd || "compress") {
         case "help":
           ctx.ui.notify(
-            "/atm [compress [focus]] | context | stats | sweep [n] | decompress <id> | recompress <id> | manual [on|off] | enable | disable",
+            "/atm [compress [focus]] | export [filter] | context | stats | sweep [n] | decompress <id> | recompress <id> | manual [on|off] | enable | disable",
             "info",
           )
+          return
+        case "export":
+          runFullExportCommand({ filterText: tail, ctx: asRuntimeContext(ctx), cwd, sessionKey, state })
           return
         case "context": {
           const usage = ctx.getContextUsage?.()
@@ -454,6 +484,7 @@ export default function activeTokenManagement(pi: ExtensionAPI) {
     state.nudges = { context: [], turn: [], iteration: [] }
     state.nudgeAudit = []
     debugLog(config, "compaction detected; ATM state reset", { id })
+    fullExport.record({ kind: "atm_state", payload: { reason: "compaction_reset", id, state } })
   }
   function notify(ctx: RuntimeContext, msg: string, level: NotifyLevel) {
     if (config.pruneNotification === "off") return
@@ -465,12 +496,4 @@ export default function activeTokenManagement(pi: ExtensionAPI) {
     }
     ctx.ui.notify(msg, level)
   }
-}
-
-function toAtmMessages(messages: unknown): AtmMessage[] {
-  return Array.isArray(messages) ? (messages as AtmMessage[]) : []
-}
-
-function asRuntimeContext(ctx: unknown): RuntimeContext {
-  return ctx as RuntimeContext
 }

@@ -11,8 +11,32 @@ pi-atm keeps large sessions usable by non-destructively rewriting outbound LLM c
 ## Command
 
 ```text
-/atm [compress [focus]] | context | stats | sweep [n] | decompress <id> | recompress <id> | manual [on|off] | enable | disable
+/atm [compress [focus]] | export [filter] | context | stats | sweep [n] | decompress <id> | recompress <id> | manual [on|off] | enable | disable
 ```
+
+### Full export
+
+`/atm export [filter]` writes a self-contained HTML audit export in the current working directory. Filters are comma-separated event kinds or categories, for example:
+
+```text
+/atm export
+/atm export provider_request,provider_response
+/atm export tool,context
+```
+
+Full raw event recording is opt-in:
+
+```sh
+PI_ATM_FULL_EXPORT=1 pi
+```
+
+Truthy values are `1`, `true`, `yes`, and `on` case-insensitively. When enabled, raw JSONL audit events are stored under:
+
+```text
+~/.pi/agent/logs/atm/full-export
+```
+
+This data is not redacted. It can include raw prompts, hidden/custom messages, tool inputs and outputs, exact provider request payloads, and provider response metadata. If recording was not enabled, `/atm export` still writes fallback HTML from current session entries, current session context, and ATM state, but it warns that exact provider payloads and full event history are unavailable.
 
 ## Installation
 

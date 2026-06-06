@@ -3,7 +3,7 @@ export type NotifyType = "toast" | "chat"
 export type CompressionMode = "range" | "message"
 export type Permission = "allow" | "ask" | "deny"
 export type NudgeType = "context" | "turn" | "iteration"
-export type NotifyLevel = "info" | "error"
+export type NotifyLevel = "info" | "warning" | "error"
 
 export type JsonPrimitive = string | number | boolean | null
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue }
