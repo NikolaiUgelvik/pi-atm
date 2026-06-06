@@ -8,7 +8,6 @@ const lifecycleHooks: Array<{ hook: string; kind: FullExportKind }> = [
   { hook: "turn_start", kind: "turn_start" },
   { hook: "turn_end", kind: "turn_end" },
   { hook: "message_start", kind: "message_start" },
-  { hook: "message_update", kind: "message_update" },
   { hook: "message_end", kind: "message_end" },
   { hook: "tool_execution_start", kind: "tool_execution_start" },
   { hook: "tool_execution_update", kind: "tool_execution_update" },

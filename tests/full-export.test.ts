@@ -4,6 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
 import { filterEvents, parseFullExportFilter } from "../src/full-export/filters.js"
+import { registerFullExportHookEvents } from "../src/full-export/hook-events.js"
 import { renderFullExportHtml } from "../src/full-export/html.js"
 import { renderEventEntry, renderFallback, renderSidebarItem } from "../src/full-export/html-renderers.js"
 import {
@@ -40,6 +41,22 @@ function renderTestExport(events: FullExportEvent[], warnings: string[] = []) {
 function assertHtmlMatches(html: string, patterns: RegExp[]) {
   for (const pattern of patterns) assert.match(html, pattern)
 }
+
+test("full export records completed messages without streaming message updates", () => {
+  const registeredHooks: string[] = []
+
+  registerFullExportHookEvents(
+    {
+      on(name: never) {
+        registeredHooks.push(String(name))
+      },
+    },
+    () => {},
+  )
+
+  assert.equal(registeredHooks.includes("message_end"), true)
+  assert.equal(registeredHooks.includes("message_update"), false)
+})
 
 test("full export filters parse exact kinds and categories", () => {
   const parsed = parseFullExportFilter("provider_request, tool, context")

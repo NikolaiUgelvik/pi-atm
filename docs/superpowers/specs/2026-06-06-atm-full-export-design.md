@@ -89,7 +89,7 @@ Record these event kinds when full recording is enabled:
 | `turn_start` | `turn_start` | Turn index and timestamp. |
 | `turn_end` | `turn_end` | Turn index, finalized assistant message, tool results. |
 | `message_start` | `message_start` | Raw message object. |
-| `message_update` | `message_update` | Assistant streaming update object as exposed by Pi. Store each update event because the feature goal is complete observable capture. |
+| `message_update` | Not recorded for new exports | Streaming assistant deltas are intentionally skipped because they can create high-volume partial-character noise. Existing exports that contain this kind remain renderable. |
 | `message_end` | `message_end` | Finalized message object. |
 | `tool_execution_start` | `tool_execution_start` | Tool call id, tool name, args. |
 | `tool_execution_update` | `tool_execution_update` | Tool call id, tool name, args, partial result. |
@@ -136,7 +136,7 @@ Examples:
 
 Broad categories:
 
-- `message`: `input`, `before_agent_start`, `message_start`, `message_update`, `message_end`, `turn_end`
+- `message`: `input`, `before_agent_start`, `message_start`, `message_update` (legacy), `message_end`, `turn_end`
 - `tool`: `tool_execution_start`, `tool_execution_update`, `tool_execution_end`, `tool_call`, `tool_result`
 - `provider`: `provider_request`, `provider_response`
 - `context`: `context`
@@ -285,5 +285,5 @@ Manual verification:
 
 - `after_provider_response` exposes response status and headers, not necessarily raw response body or stream chunks. The exporter must label this as provider response metadata.
 - Finalized assistant response content must come from `message_end` and/or `turn_end`.
-- `message_update` can produce high-volume streaming deltas. Record all exposed updates because completeness is the approved goal.
+- `message_update` can produce high-volume streaming deltas and must not be recorded for new exports. Keep render/filter support for old exports that already contain this event kind.
 - Because this feature writes sensitive data, keep the environment variable separate from existing `debug` config.
